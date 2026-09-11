@@ -1,0 +1,36 @@
+# Detector configuration for the ELTE MWPC tracker (March 2026 lab)
+name: "elte_mwpc_2026"
+description: "6-layer MWPC tower (HR-14 … HR-8)"
+
+# Geometry
+pitch_cm: 1.2
+endpoint_separation_cm: 30.0
+n_strips: 64
+
+# Trigger bit order in the raw .ebe file
+trigger_labels:
+  - T5
+  - T4
+  - T3
+  - T2
+  - T1
+  - T0
+
+# Chamber order corresponding to the 12 coordinates in the .ebe file
+chamber_names:
+  - HR14
+  - HRA
+  - HRB
+  - HR13
+  - HR12
+  - HR8
+
+# Analysis defaults (can be overridden later if needed)
+efficiency:
+  reference_top: "HR14"
+  reference_bottom: "HR8"
+  under_test: "HRB"
+
+tracking:
+  endpoint_top: "HR14"
+  endpoint_bottom: "HR8"

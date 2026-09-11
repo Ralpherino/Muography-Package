@@ -1,0 +1,43 @@
+ticket:
+  id: "MUO-001"
+  title: "Baseline MWPC analysis – first ticket"
+
+# Runs for which we may later request per-run plots
+runs:
+    - 206
+    - 205
+    - 204
+    - 203
+    - 202
+    - 209
+    - 207
+    - 208
+
+
+per_run:
+  inspect: false
+  figure4: true
+  figure5: true
+  figure6: true
+  figure7: true
+
+efficiency_scan:
+  enabled: true
+  runs:
+    - 206
+    - 205
+    - 204
+    - 203
+    - 202
+    - 209
+    - 207
+    - 208
+  figure2: true
+  figure3: true
+
+comparison:
+  enabled: true
+  runs:
+    - 200
+    - 201
+    - 209

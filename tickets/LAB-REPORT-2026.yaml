@@ -1,0 +1,27 @@
+# tickets/LAB-REPORT-2026.yaml
+ticket:
+  id: "LAB-REPORT-2026"
+  title: "Reproduction of the March 2026 MWPC lab report"
+
+detector: "elte_mwpc_2026"
+
+# Long tracking run used for Figures 4–7
+runs:
+  - 200
+
+per_run:
+  inspect: false
+  figure4: true
+  figure5: true
+  figure6: true
+  figure7: true
+
+# Efficiency scan (adjust the run numbers to the ones that produced Table 1)
+efficiency_scan:
+  enabled: true
+  runs: [202, 203, 204, 205, 206, 207, 208, 209]   # ← change to your real HV-scan runs
+  figure2: true
+  figure3: true
+
+comparison:
+  enabled: false
