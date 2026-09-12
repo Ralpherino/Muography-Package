@@ -21,7 +21,7 @@ if TICKET.get("efficiency_scan", {}).get("enabled", False):
             data_dir = DATA_DIR,
             cache_dir = CACHE_DIR,
         log:
-            EFF_DIR / "build_efficiency_table.log"
+            EFF_DIR / "efficiency_table.log"
         shell:
             """
             mkdir -p {EFF_DIR}
@@ -44,7 +44,7 @@ if TICKET.get("efficiency_scan", {}).get("enabled", False):
                 data_dir = DATA_DIR,
                 cache_dir = CACHE_DIR,
             log:
-                EFF_DIR / "figure2.log"
+                EFF_DIR / "all_efficiencies.log"
             shell:
                 """
                 python {SCRIPTS_DIR}/all_efficiencies.py \
@@ -66,7 +66,7 @@ if TICKET.get("efficiency_scan", {}).get("enabled", False):
                 data_dir = DATA_DIR,
                 cache_dir = CACHE_DIR,
             log:
-                EFF_DIR / "figure3.log"
+                EFF_DIR / "separate_efficiencies.log"
             shell:
                 """
                 python {SCRIPTS_DIR}/separate_efficiencies.py \

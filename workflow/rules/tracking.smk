@@ -24,7 +24,7 @@ if WANT_FIG4 or WANT_FIG5 or WANT_FIG6 or WANT_FIG7:
             out_dir   = lambda wildcards: run_output_dir(int(wildcards.run)),
             time_mode = "timestamps",
         log:
-            run_output_dir("{run}") / "figure4.log"
+            run_output_dir("{run}") / "angular_distributions.log"
         shell:
             """
             mkdir -p {params.out_dir}
@@ -52,7 +52,7 @@ if WANT_FIG5:
             out_dir   = lambda wildcards: run_output_dir(int(wildcards.run)),
             time_mode = "timestamps",
         log:
-            run_output_dir("{run}") / "figure5.log"
+            run_output_dir("{run}") / "angular_map.log"
         shell:
             """
             python {SCRIPTS_DIR}/angular_map.py \
@@ -81,7 +81,7 @@ if WANT_FIG6:
             time_mode = "timestamps",
             max_dy    = 1,
         log:
-            run_output_dir("{run}") / "figure6.log"
+            run_output_dir("{run}") / "y_slice.log"
         shell:
             """
             python {SCRIPTS_DIR}/y_slice.py \
@@ -111,7 +111,7 @@ if WANT_FIG7:
             time_mode = "timestamps",
             max_dy    = 1,
         log:
-            run_output_dir("{run}") / "figure7.log"
+            run_output_dir("{run}") / "flux.log"
         shell:
             """
             python {SCRIPTS_DIR}/flux.py \

@@ -14,7 +14,7 @@ if TICKET.get("per_run", {}).get("inspect", False):
             cache_dir = CACHE_DIR,
             out_dir   = lambda wildcards: run_output_dir(int(wildcards.run)),
         log:
-            run_output_dir("{run}") / "inspect.log"
+            run_output_dir("{run}") / "inspect_run.log"
         shell:
             """
             mkdir -p {params.out_dir}
