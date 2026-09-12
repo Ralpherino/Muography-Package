@@ -1,13 +1,15 @@
-"""Input/output helpers for ELTE MWPC .ebe and .sett files."""
+"""Input/output helpers for MWPC .ebe and .sett files."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
 import pandas as pd
 
-from mwpc_config import CHAMBER_NAMES, TRIGGER_LABELS
+from mwpc_config import get_config
 
 
 def ebe_path(data_dir: Path, run: int) -> Path:
@@ -35,18 +37,15 @@ def sett_path(data_dir: Path, run: int) -> Path:
 def parse_ebe_file(file_path: Path) -> pd.DataFrame:
     """Parse one tracker .ebe file into one DataFrame row per event.
 
-    Raw-line structure expected by this parser::
-
-        event T datetime clock Adc <6 values> P <6 bits>
-        Hv <3 values> Ch <12 coordinates>
-
-    The 12 coordinates are interpreted as two coordinates for each chamber in
-    the order HR14, HRA, HRB, HR13, HR12, HR8.
-
-    The raw value -1 is preserved. It means that no coordinate was recorded.
-    Valid strip indices are 0 through 63, so downstream code must test >= 0,
-    not > 0.
+    Chamber names and trigger labels are resolved from the *currently selected*
+    detector configuration when this function is called.  Therefore a new YAML
+    can change the logical DAQ mapping without Python edits.
     """
+    cfg = get_config()
+    chamber_names = tuple(cfg["chamber_names"])
+    trigger_labels = tuple(cfg["trigger_labels"])
+    expected_coordinates = 2 * len(chamber_names)
+
     rows: list[dict[str, object]] = []
 
     with file_path.open("r", encoding="utf-8") as input_file:
@@ -79,23 +78,24 @@ def parse_ebe_file(file_path: Path) -> pd.DataFrame:
             ]
             channel_values = [int(value) for value in tokens[channel_position + 1 :]]
 
-            if len(adc_values) != 6:
+            if len(adc_values) != len(chamber_names):
                 raise ValueError(
-                    f"Line {line_number}: expected 6 ADC values, found {len(adc_values)}"
+                    f"Line {line_number}: expected {len(chamber_names)} ADC values "
+                    f"for detector {cfg['name']!r}, found {len(adc_values)}"
                 )
-            if len(pattern_values) != 6:
+            if len(pattern_values) != len(trigger_labels):
                 raise ValueError(
-                    f"Line {line_number}: expected 6 trigger values, "
+                    f"Line {line_number}: expected {len(trigger_labels)} trigger values, "
                     f"found {len(pattern_values)}"
                 )
             if len(hv_values) != 3:
                 raise ValueError(
                     f"Line {line_number}: expected 3 HV values, found {len(hv_values)}"
                 )
-            if len(channel_values) != 12:
+            if len(channel_values) != expected_coordinates:
                 raise ValueError(
-                    f"Line {line_number}: expected 12 coordinates, "
-                    f"found {len(channel_values)}"
+                    f"Line {line_number}: expected {expected_coordinates} coordinates "
+                    f"({len(chamber_names)} chambers x 2), found {len(channel_values)}"
                 )
 
             row: dict[str, object] = {
@@ -112,11 +112,11 @@ def parse_ebe_file(file_path: Path) -> pd.DataFrame:
                 row[f"ADC{adc_index}"] = adc_value
 
             for trigger_label, pattern_value in zip(
-                TRIGGER_LABELS, pattern_values, strict=True
+                trigger_labels, pattern_values, strict=True
             ):
                 row[trigger_label] = pattern_value
 
-            for chamber_index, chamber_name in enumerate(CHAMBER_NAMES):
+            for chamber_index, chamber_name in enumerate(chamber_names):
                 x_index = 2 * chamber_index
                 y_index = x_index + 1
                 row[f"{chamber_name}_X"] = channel_values[x_index]
@@ -134,28 +134,39 @@ def parse_ebe_file(file_path: Path) -> pd.DataFrame:
     return events
 
 
+def _cache_file(cache_dir: Path, run: int) -> Path:
+    """Return a detector-configuration-specific cache filename.
+
+    Parsed column names depend on the detector YAML.  The short configuration
+    hash prevents stale caches from surviving a detector-mapping edit made
+    under the same detector name.
+    """
+    cfg = get_config()
+    detector_name = str(cfg["name"]).replace("/", "_")
+    fingerprint = hashlib.sha256(
+        json.dumps(cfg, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:10]
+    return cache_dir / f"run_{run}__{detector_name}__{fingerprint}.pkl"
+
+
 def load_run(
     data_dir: Path,
     run: int,
     cache_dir: Path | None = None,
     use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Load a run, optionally using a local pandas pickle cache.
-
-    Parsing Run 200 repeatedly is unnecessary. The first script that needs it
-    writes ``cache/run_200.pkl``; later scripts load that cache directly.
-    Delete the cache file whenever the parser changes.
-    """
+    """Load a run, optionally using a detector-specific pandas pickle cache."""
+    cache_file: Path | None = None
     if use_cache and cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_file = cache_dir / f"run_{run}.pkl"
+        cache_file = _cache_file(cache_dir, run)
         if cache_file.exists():
             return pd.read_pickle(cache_file)
 
     events = parse_ebe_file(ebe_path(data_dir, run))
 
-    if use_cache and cache_dir is not None:
-        events.to_pickle(cache_dir / f"run_{run}.pkl")
+    if use_cache and cache_file is not None:
+        events.to_pickle(cache_file)
 
     return events
 
