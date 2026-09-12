@@ -1,4 +1,4 @@
-# MuographyPackage v1.1
+# MuographyPackage v1.2
 
 A reproducible, ticket-driven analysis factory for multi-wire proportional chamber (MWPC) cosmic-ray muon data.
 
