@@ -1,9 +1,11 @@
-"""Efficiency calculations shared by Figures 2 and 3."""
+"""Detector-configurable efficiency calculations shared by Figures 2 and 3."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from mwpc_config import chamber_trigger, get_config
 
 
 def binomial_error(efficiency: float, n_total: int) -> float:
@@ -13,27 +15,37 @@ def binomial_error(efficiency: float, n_total: int) -> float:
     return float(np.sqrt(efficiency * (1.0 - efficiency) / n_total))
 
 
+def _efficiency_roles() -> tuple[str, str, str]:
+    cfg = get_config()
+    eff = cfg["efficiency"]
+    return (
+        str(eff["reference_top"]),
+        str(eff["reference_bottom"]),
+        str(eff["under_test"]),
+    )
+
+
 def calculate_trigger_efficiency(events: pd.DataFrame) -> dict[str, float | int]:
-    """Measure HR-B trigger efficiency using HR-14 and HR-8 as references.
+    """Measure DUT trigger efficiency using YAML-configured reference chambers.
 
-    Mathematics
-    -----------
-    Reference event:
-        R_j = (T5_j = 1) AND (T0_j = 1)
-
-    Successful HR-B event:
-        G_j = R_j AND (T3_j = 1)
-
-    Efficiency:
-        epsilon_trigger = N_good / N_total
+    Trigger labels are derived from the chamber order / trigger order mapping in
+    the selected detector YAML; no T5/T3/T0 names are hard-coded here.
     """
-    reference = events["T5"].eq(1) & events["T0"].eq(1)
-    good = reference & events["T3"].eq(1)
+    top, bottom, dut = _efficiency_roles()
+    top_trigger = chamber_trigger(top)
+    bottom_trigger = chamber_trigger(bottom)
+    dut_trigger = chamber_trigger(dut)
+
+    reference = events[top_trigger].eq(1) & events[bottom_trigger].eq(1)
+    good = reference & events[dut_trigger].eq(1)
 
     n_total = int(reference.sum())
     n_good = int(good.sum())
     if n_total == 0:
-        raise ValueError("No trigger-reference events were found")
+        raise ValueError(
+            "No trigger-reference events were found for "
+            f"{top}/{bottom} ({top_trigger}/{bottom_trigger})"
+        )
 
     efficiency = n_good / n_total
     return {
@@ -47,23 +59,15 @@ def calculate_trigger_efficiency(events: pd.DataFrame) -> dict[str, float | int]
 def calculate_coordinate_efficiency(
     events: pd.DataFrame, coordinate: str
 ) -> dict[str, float | int]:
-    """Measure HR-B X or Y efficiency using endpoint coordinate hits.
-
-    A coordinate is valid when its raw strip index is >= 0. The raw value -1
-    means no coordinate; strip 0 is valid.
-
-    For coordinate C in {X,Y}:
-        R_C,j = (HR14_C,j >= 0) AND (HR8_C,j >= 0)
-        G_C,j = R_C,j AND (HRB_C,j >= 0)
-        epsilon_C = N(G_C) / N(R_C)
-    """
+    """Measure DUT X or Y efficiency using YAML-configured chamber roles."""
     coordinate = coordinate.upper()
     if coordinate not in {"X", "Y"}:
         raise ValueError("coordinate must be 'X' or 'Y'")
 
-    top = f"HR14_{coordinate}"
-    middle = f"HRB_{coordinate}"
-    bottom = f"HR8_{coordinate}"
+    top_chamber, bottom_chamber, dut_chamber = _efficiency_roles()
+    top = f"{top_chamber}_{coordinate}"
+    middle = f"{dut_chamber}_{coordinate}"
+    bottom = f"{bottom_chamber}_{coordinate}"
 
     reference = events[top].ge(0) & events[bottom].ge(0)
     good = reference & events[middle].ge(0)
@@ -84,7 +88,7 @@ def calculate_coordinate_efficiency(
 
 
 def calculate_run_efficiencies(events: pd.DataFrame) -> dict[str, float | int]:
-    """Calculate trigger, X, Y, and report-style XY efficiencies."""
+    """Calculate trigger, X, Y, report-style XY, and true joint XY efficiencies."""
     trigger = calculate_trigger_efficiency(events)
     x_result = calculate_coordinate_efficiency(events, "X")
     y_result = calculate_coordinate_efficiency(events, "Y")
@@ -92,8 +96,7 @@ def calculate_run_efficiencies(events: pd.DataFrame) -> dict[str, float | int]:
     x_eff = float(x_result["x_efficiency"])
     y_eff = float(y_result["y_efficiency"])
 
-    # The laboratory report defines displayed XY as min(X,Y), not as the
-    # event-level X AND Y intersection.
+    # Preserve the laboratory report definition used by the existing plots.
     xy_eff = min(x_eff, y_eff)
     xy_error = (
         float(x_result["x_error"])
@@ -101,17 +104,20 @@ def calculate_run_efficiencies(events: pd.DataFrame) -> dict[str, float | int]:
         else float(y_result["y_error"])
     )
 
-    # Also calculate the true event-level joint XY efficiency under the same
-    # trigger reference. This is retained for validation, even though it is not
-    # the report's displayed definition.
-    reference_trigger = events["T5"].eq(1) & events["T0"].eq(1)
+    top_chamber, bottom_chamber, dut_chamber = _efficiency_roles()
+    top_trigger = chamber_trigger(top_chamber)
+    bottom_trigger = chamber_trigger(bottom_chamber)
+
+    reference_trigger = events[top_trigger].eq(1) & events[bottom_trigger].eq(1)
     joint_good = (
         reference_trigger
-        & events["HRB_X"].ge(0)
-        & events["HRB_Y"].ge(0)
+        & events[f"{dut_chamber}_X"].ge(0)
+        & events[f"{dut_chamber}_Y"].ge(0)
     )
     n_joint_total = int(reference_trigger.sum())
     n_joint_good = int(joint_good.sum())
+    if n_joint_total == 0:
+        raise ValueError("No trigger-reference events were found for joint XY efficiency")
     joint_eff = n_joint_good / n_joint_total
 
     return {
