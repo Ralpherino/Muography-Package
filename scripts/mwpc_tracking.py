@@ -6,59 +6,65 @@ import numpy as np
 import pandas as pd
 from scipy.integrate import dblquad
 
-from mwpc_config import ACTIVE_SIDE_CM, ENDPOINT_SEPARATION_CM, PITCH_CM
+from mwpc_config import get_config
+
+
+def _tracking_geometry() -> tuple[str, str, float, float, float]:
+    """Resolve endpoint chambers and geometry from the active detector YAML."""
+    cfg = get_config()
+    tracking = cfg["tracking"]
+    return (
+        str(tracking["endpoint_top"]),
+        str(tracking["endpoint_bottom"]),
+        float(cfg["pitch_cm"]),
+        float(cfg["endpoint_separation_cm"]),
+        float(cfg["active_side_cm"]),
+    )
 
 
 def reconstruct_endpoint_tracks(events: pd.DataFrame) -> pd.DataFrame:
-    """Select valid HR14-HR8 endpoint hits and reconstruct track angles.
+    """Select valid configured endpoint hits and reconstruct track angles."""
+    top, bottom, pitch_cm, separation_cm, _active_side_cm = _tracking_geometry()
 
-    Endpoint displacement:
-        Delta X_strip = X_HR8 - X_HR14
-        Delta Y_strip = Y_HR8 - Y_HR14
+    top_x = f"{top}_X"
+    top_y = f"{top}_Y"
+    bottom_x = f"{bottom}_X"
+    bottom_y = f"{bottom}_Y"
 
-    Physical displacement:
-        Delta x = pitch * Delta X_strip
-        Delta y = pitch * Delta Y_strip
-
-    Projected angles:
-        theta_x = atan2(Delta x, h)
-        theta_y = atan2(Delta y, h)
-
-    Full zenith angle:
-        theta = atan2(sqrt(Delta x^2 + Delta y^2), h)
-    """
     valid = (
-        events["HR14_X"].ge(0)
-        & events["HR14_Y"].ge(0)
-        & events["HR8_X"].ge(0)
-        & events["HR8_Y"].ge(0)
+        events[top_x].ge(0)
+        & events[top_y].ge(0)
+        & events[bottom_x].ge(0)
+        & events[bottom_y].ge(0)
     )
     tracks = events.loc[valid].copy()
 
-    tracks["delta_x_strip"] = tracks["HR8_X"] - tracks["HR14_X"]
-    tracks["delta_y_strip"] = tracks["HR8_Y"] - tracks["HR14_Y"]
-    tracks["delta_x_cm"] = PITCH_CM * tracks["delta_x_strip"]
-    tracks["delta_y_cm"] = PITCH_CM * tracks["delta_y_strip"]
+    tracks["delta_x_strip"] = tracks[bottom_x] - tracks[top_x]
+    tracks["delta_y_strip"] = tracks[bottom_y] - tracks[top_y]
+    tracks["delta_x_cm"] = pitch_cm * tracks["delta_x_strip"]
+    tracks["delta_y_cm"] = pitch_cm * tracks["delta_y_strip"]
 
     tracks["theta_x_deg"] = np.degrees(
-        np.arctan2(tracks["delta_x_cm"], ENDPOINT_SEPARATION_CM)
+        np.arctan2(tracks["delta_x_cm"], separation_cm)
     )
     tracks["theta_y_deg"] = np.degrees(
-        np.arctan2(tracks["delta_y_cm"], ENDPOINT_SEPARATION_CM)
+        np.arctan2(tracks["delta_y_cm"], separation_cm)
     )
     tracks["theta_deg"] = np.degrees(
         np.arctan2(
             np.hypot(tracks["delta_x_cm"], tracks["delta_y_cm"]),
-            ENDPOINT_SEPARATION_CM,
+            separation_cm,
         )
     )
     return tracks
+
 
 def select_y_slice(tracks: pd.DataFrame, max_strip_difference: int = 1) -> pd.DataFrame:
     """Select |Delta Y_strip| <= max_strip_difference."""
     return tracks.loc[
         tracks["delta_y_strip"].abs().le(max_strip_difference)
     ].copy()
+
 
 def projected_solid_angle(
     theta_x_low_deg: float,
@@ -83,38 +89,25 @@ def projected_solid_angle(
     )
     return float(value)
 
-def effective_area_report(theta_x_center_deg: np.ndarray) -> np.ndarray:
-    """Return the report-style effective area in cm^2.
 
-    A_i = L * (L - h tan(alpha_i)) * cos(alpha_i)
-    alpha_i = |theta_x,i|
-    """
+def effective_area_report(theta_x_center_deg: np.ndarray) -> np.ndarray:
+    """Return the report-style effective area in cm^2 using active YAML geometry."""
+    _top, _bottom, _pitch_cm, separation_cm, active_side_cm = _tracking_geometry()
     alpha = np.radians(np.abs(theta_x_center_deg))
     area = (
-        ACTIVE_SIDE_CM
-        * (ACTIVE_SIDE_CM - ENDPOINT_SEPARATION_CM * np.tan(alpha))
+        active_side_cm
+        * (active_side_cm - separation_cm * np.tan(alpha))
         * np.cos(alpha)
     )
     return area
+
 
 def effective_area_2d(
     theta_x_deg: np.ndarray,
     theta_y_deg: np.ndarray,
 ) -> np.ndarray:
-    """Effective perpendicular overlap area for a 2D track direction.
-
-    A_eff(theta_x, theta_y)
-        = overlap_x * overlap_y * cos(theta)
-
-    where
-        overlap_x = L - h * |tan(theta_x)|
-        overlap_y = L - h * |tan(theta_y)|
-
-    Returns
-    -------
-    np.ndarray
-        Effective area in cm^2.
-    """
+    """Effective perpendicular overlap area for a 2D track direction."""
+    _top, _bottom, _pitch_cm, separation_cm, active_side_cm = _tracking_geometry()
 
     theta_x = np.radians(theta_x_deg)
     theta_y = np.radians(theta_y_deg)
@@ -122,21 +115,16 @@ def effective_area_2d(
     u = np.tan(theta_x)
     v = np.tan(theta_y)
 
-    overlap_x = ACTIVE_SIDE_CM - ENDPOINT_SEPARATION_CM * np.abs(u)
-    overlap_y = ACTIVE_SIDE_CM - ENDPOINT_SEPARATION_CM * np.abs(v)
+    overlap_x = active_side_cm - separation_cm * np.abs(u)
+    overlap_y = active_side_cm - separation_cm * np.abs(v)
 
     valid = (overlap_x > 0.0) & (overlap_y > 0.0)
-
     cos_theta = 1.0 / np.sqrt(1.0 + u**2 + v**2)
 
     area = np.zeros_like(cos_theta, dtype=float)
-    area[valid] = (
-        overlap_x[valid]
-        * overlap_y[valid]
-        * cos_theta[valid]
-    )
-
+    area[valid] = overlap_x[valid] * overlap_y[valid] * cos_theta[valid]
     return area
+
 
 def build_angular_flux_grid(
     theta_x_deg,
@@ -145,15 +133,7 @@ def build_angular_flux_grid(
     y_edges_deg: np.ndarray,
     measurement_time_s: float,
 ) -> dict[str, np.ndarray]:
-    """Build a 2D angular counts/acceptance/flux grid.
-
-    For each angular cell (i, j):
-
-        Phi_ij = N_ij / (A_ij * t * DeltaOmega_ij)
-
-    Returns flux in cm^-2 s^-1 sr^-1.
-    """
-
+    """Build a 2D angular counts/acceptance/flux grid."""
     counts, _, _ = np.histogram2d(
         theta_x_deg,
         theta_y_deg,
@@ -169,11 +149,7 @@ def build_angular_flux_grid(
         indexing="ij",
     )
 
-    effective_area_cm2 = effective_area_2d(
-        theta_x_grid,
-        theta_y_grid,
-    )
-
+    effective_area_cm2 = effective_area_2d(theta_x_grid, theta_y_grid)
     solid_angle_sr = np.zeros_like(counts, dtype=float)
 
     for i, (x_low, x_high) in enumerate(
@@ -189,17 +165,11 @@ def build_angular_flux_grid(
                 y_high,
             )
 
-    geometric_acceptance_cm2_sr = (
-        effective_area_cm2 * solid_angle_sr
-    )
-
-    exposure = (
-        geometric_acceptance_cm2_sr * measurement_time_s
-    )
+    geometric_acceptance_cm2_sr = effective_area_cm2 * solid_angle_sr
+    exposure = geometric_acceptance_cm2_sr * measurement_time_s
 
     flux = np.full_like(counts, np.nan, dtype=float)
     flux_error = np.full_like(counts, np.nan, dtype=float)
-
     valid = exposure > 0.0
 
     flux[valid] = counts[valid] / exposure[valid]
@@ -216,9 +186,13 @@ def build_angular_flux_grid(
         "flux_error": flux_error,
     }
 
+
 def timestamp_span_seconds(events: pd.DataFrame) -> float:
     """Return last timestamp minus first timestamp in seconds."""
-    return float((events["date_time"].iloc[-1] - events["date_time"].iloc[0]).total_seconds())
+    return float(
+        (events["date_time"].iloc[-1] - events["date_time"].iloc[0]).total_seconds()
+    )
+
 
 def resolve_measurement_time(
     events: pd.DataFrame,
@@ -226,13 +200,8 @@ def resolve_measurement_time(
     report_time_s: float = 3600.0,
 ) -> float:
     """Return measurement time according to the selected convention."""
-
     if time_mode == "timestamps":
         return timestamp_span_seconds(events)
-
     if time_mode == "report":
         return float(report_time_s)
-
-    raise ValueError(
-        "time_mode must be 'timestamps' or 'report'"
-    )
+    raise ValueError("time_mode must be 'timestamps' or 'report'")
