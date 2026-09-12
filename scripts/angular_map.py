@@ -18,7 +18,7 @@ from mwpc_tracking import(
     build_angular_flux_grid,
     resolve_measurement_time,
 )
-from mwpc_config import set_detector
+from mwpc_config import get_config, set_detector
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -130,8 +130,11 @@ def main() -> None:
     fig.savefig(output_file, dpi=200)
     plt.close(fig)
 
-    x_corr = tracks[["HR14_X", "HR8_X"]].corr().iloc[0, 1]
-    y_corr = tracks[["HR14_Y", "HR8_Y"]].corr().iloc[0, 1]
+    cfg = get_config()
+    top = str(cfg["tracking"]["endpoint_top"])
+    bottom = str(cfg["tracking"]["endpoint_bottom"])
+    x_corr = tracks[[f"{top}_X", f"{bottom}_X"]].corr().iloc[0, 1]
+    y_corr = tracks[[f"{top}_Y", f"{bottom}_Y"]].corr().iloc[0, 1]
     print(f"X endpoint correlation: {x_corr:.4f}")
     print(f"Y endpoint correlation: {y_corr:.4f}")
     print(f"Saved: {output_file}")
