@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 
 from cli_common import add_common_arguments, prepare_paths
-from mwpc_config import set_detector
+from mwpc_config import get_config, set_detector
 from mwpc_io import ebe_path, load_run, parse_sett_file, sett_path
 
 
@@ -54,10 +54,16 @@ def main() -> None:
     print(f"First timestamp: {events['date_time'].iloc[0]}")
     print(f"Last timestamp:  {events['date_time'].iloc[-1]}")
 
-    columns = [
-        "event_id", "T5", "T4", "T3", "T2", "T1", "T0",
-        "HR14_X", "HR14_Y", "HRB_X", "HRB_Y", "HR8_X", "HR8_Y",
-    ]
+    cfg = get_config()
+    eff = cfg["efficiency"]
+    chambers = []
+    for chamber in (eff["reference_top"], eff["under_test"], eff["reference_bottom"]):
+        if chamber not in chambers:
+            chambers.append(chamber)
+
+    columns = ["event_id", *cfg["trigger_labels"]]
+    for chamber in chambers:
+        columns.extend([f"{chamber}_X", f"{chamber}_Y"])
     print("\nFIRST PARSED EVENTS")
     print("-------------------")
     print(events[columns].head(args.rows).to_string(index=False))
