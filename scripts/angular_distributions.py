@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from cli_common import add_common_arguments, prepare_paths
-from mwpc_config import set_detector
+from mwpc_config import get_config, set_detector
 from mwpc_io import load_run
 from mwpc_tracking import (
     build_angular_flux_grid,
@@ -132,10 +132,13 @@ def main() -> None:
     fig.savefig(output_b, dpi=200)
     plt.close(fig)
 
-    # Save tracks
+    # Save tracks. Endpoint chamber names come from the active detector YAML.
+    cfg = get_config()
+    top = str(cfg["tracking"]["endpoint_top"])
+    bottom = str(cfg["tracking"]["endpoint_bottom"])
     track_columns = [
         "event_id", "date_time",
-        "HR14_X", "HR14_Y", "HR8_X", "HR8_Y",
+        f"{top}_X", f"{top}_Y", f"{bottom}_X", f"{bottom}_Y",
         "delta_x_strip", "delta_y_strip",
         "delta_x_cm", "delta_y_cm",
         "theta_x_deg", "theta_y_deg", "theta_deg",
