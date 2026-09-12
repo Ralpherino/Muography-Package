@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from cli_common import add_common_arguments, prepare_paths
+from mwpc_config import set_detector
 from mwpc_efficiency import calculate_trigger_efficiency
 from mwpc_io import load_run, parse_sett_file, sett_path
 
@@ -57,6 +58,7 @@ def main() -> None:
     if len(args.runs) < 2:
         parser.error("--runs requires at least two run numbers")
 
+    set_detector(args.detector)
     prepare_paths(args)
 
     # Process selected runs
